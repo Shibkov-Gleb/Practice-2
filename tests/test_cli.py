@@ -5,13 +5,16 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from tests.helpers import write_config
+from src.npm import DependencyError
+from tests.helpers import run_main, write_config
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 SUCCESS = 0
 ERROR = 2
+DEPENDENCY_ERROR = 1
 
 
 def run_cli(*arguments: str) -> subprocess.CompletedProcess:
@@ -29,27 +32,52 @@ class CliTests(unittest.TestCase):
     """Проверить stdout, stderr и коды завершения приложения."""
 
     def test_success(self) -> None:
-        """Вывести ровно шесть строк и ничего в stderr."""
-        result = run_cli("--config", "examples/config.xml")
-        self.assertEqual(result.returncode, SUCCESS)
-        self.assertEqual(result.stderr, "")
+        """Вывести прямые зависимости, сохранив настройки реестра."""
+        dependencies = {"beta": "^2.0.0", "debug": "^4.0.0"}
+        with patch(
+            "src.main.fetch_direct_dependencies", return_value=dependencies
+        ) as fetch:
+            code, stdout, stderr = run_main("--config", "examples/config.xml")
+        self.assertEqual(code, SUCCESS)
+        self.assertEqual(stderr, "")
         self.assertEqual(
-            result.stdout,
-            "package=express\n"
-            "repository=https://registry.npmjs.org\n"
-            "test_mode=false\n"
-            "output_file=graph.svg\n"
-            "ascii_tree=true\n"
-            "filter_substring=debug\n",
+            stdout,
+            "Прямые зависимости пакета express:\n"
+            "beta: ^2.0.0\ndebug: ^4.0.0\n",
         )
+        fetch.assert_called_once_with("https://registry.npmjs.org", "express")
 
     def test_test_example(self) -> None:
-        """Загрузить пример локального репозитория с пустым фильтром."""
-        result = run_cli("--config", "examples/test_config.xml")
-        self.assertEqual(result.returncode, SUCCESS)
-        self.assertIn("package=A\n", result.stdout)
-        self.assertIn("test_mode=true\n", result.stdout)
-        self.assertTrue(result.stdout.endswith("filter_substring=\n"))
+        """Сообщить, что тестовый граф относится к этапу 3."""
+        with patch("src.main.fetch_direct_dependencies") as fetch:
+            code, stdout, stderr = run_main(
+                "--config", "examples/test_config.xml"
+            )
+        self.assertEqual(code, DEPENDENCY_ERROR)
+        self.assertEqual(stdout, "")
+        self.assertIn("test_mode", stderr)
+        self.assertIn("этапу 3", stderr)
+        fetch.assert_not_called()
+
+    def test_no_dependencies(self) -> None:
+        """Сообщить о пакете без зависимостей без ошибки."""
+        with patch("src.main.fetch_direct_dependencies", return_value={}):
+            code, stdout, stderr = run_main("--config", "examples/config.xml")
+        self.assertEqual(code, SUCCESS)
+        self.assertEqual(stderr, "")
+        self.assertEqual(stdout, "У пакета express нет прямых зависимостей.\n")
+
+    def test_dependency_error(self) -> None:
+        """Направить ошибку получения данных в stderr без traceback."""
+        with patch(
+            "src.main.fetch_direct_dependencies",
+            side_effect=DependencyError("Реестр недоступен."),
+        ):
+            code, stdout, stderr = run_main("--config", "examples/config.xml")
+        self.assertEqual(code, DEPENDENCY_ERROR)
+        self.assertEqual(stdout, "")
+        self.assertIn("Реестр недоступен", stderr)
+        self.assertNotIn("Traceback", stderr)
 
     def test_help(self) -> None:
         """Справка должна быть доступна без XML-файла."""
@@ -105,8 +133,7 @@ class CliTests(unittest.TestCase):
                 [
                     "sh",
                     str(PROJECT_DIR / "run.sh"),
-                    "--config",
-                    str(PROJECT_DIR / "examples/test_config.xml"),
+                    "--help",
                 ],
                 cwd=directory,
                 capture_output=True,
@@ -114,4 +141,4 @@ class CliTests(unittest.TestCase):
                 check=False,
             )
         self.assertEqual(result.returncode, SUCCESS, result.stderr)
-        self.assertIn("test_mode=true", result.stdout)
+        self.assertIn("--config", result.stdout)

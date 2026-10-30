@@ -14,8 +14,8 @@ build:
 check:
 	$(PYTHON) -B -m tools.check_style
 
-demo-errors:
-	$(PYTHON) -B -m tools.demo_errors
-
 lint:
 	$(PYTHON) -B -m flake8 src tests tools
+
+demo-errors:
+	$(PYTHON) -B -m tools.demo_errors

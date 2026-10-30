@@ -1,31 +1,33 @@
-"""Точка входа CLI: чтение XML и вывод строк ключ=значение."""
+"""Точка входа CLI: чтение XML и вывод прямых зависимостей npm."""
 
 __all__ = (
     "SUCCESS",
     "CONFIG_ERROR",
+    "DEPENDENCY_ERROR",
     "create_parser",
-    "format_config",
+    "format_dependencies",
     "main",
 )
 
 import argparse
 import sys
-from dataclasses import fields
 from pathlib import Path
 from typing import Optional, Sequence
 
-from src.config import Config, load_config
+from src.config import load_config
+from src.npm import DependencyError, fetch_direct_dependencies
 from src.validation import ConfigError
 
 
 SUCCESS = 0
 CONFIG_ERROR = 2
+DEPENDENCY_ERROR = 1
 
 
 def create_parser() -> argparse.ArgumentParser:
     """Создать CLI с опцией выбора XML-конфигурации."""
     parser = argparse.ArgumentParser(
-        description="Практическая работа 2, вариант 30, этап 1."
+        description="Практическая работа 2, вариант 30, этап 2."
     )
     parser.add_argument(
         "--config",
@@ -37,19 +39,20 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def format_config(config: Config) -> str:
-    """Представить все шесть настроек строками ключ=значение."""
-    lines = []
-    for field in fields(config):
-        value = getattr(config, field.name)
-        if isinstance(value, bool):
-            value = str(value).lower()
-        lines.append(f"{field.name}={value}")
+def format_dependencies(package: str, dependencies: dict[str, str]) -> str:
+    """Сформировать список прямых зависимостей с диапазонами версий."""
+    if not dependencies:
+        return f"У пакета {package} нет прямых зависимостей."
+    lines = [f"Прямые зависимости пакета {package}:"]
+    lines.extend(
+        f"{name}: {specification}"
+        for name, specification in sorted(dependencies.items())
+    )
     return "\n".join(lines)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Вернуть 0 при успехе или 2 при ошибке конфигурации."""
+    """Получить зависимости и вернуть код результата."""
     parser = create_parser()
     args = parser.parse_args(argv)
     try:
@@ -57,7 +60,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except ConfigError as error:
         print(f"Ошибка конфигурации: {error}", file=sys.stderr)
         return CONFIG_ERROR
-    print(format_config(config))
+    try:
+        if config.test_mode:
+            raise DependencyError(
+                "test_mode: чтение тестового графа относится к этапу 3; "
+                "для этапа 2 укажите false и URL реестра npm."
+            )
+        dependencies = fetch_direct_dependencies(
+            config.repository, config.package
+        )
+    except DependencyError as error:
+        print(f"Ошибка получения зависимостей: {error}", file=sys.stderr)
+        return DEPENDENCY_ERROR
+    print(format_dependencies(config.package, dependencies))
     return SUCCESS
 
 

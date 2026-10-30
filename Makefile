@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: run test build check lint demo-errors
+.PHONY: run test build check lint demo-errors demo-graphs
 
 run:
 	$(PYTHON) -B -m src.main --config examples/config.xml
@@ -19,3 +19,6 @@ lint:
 
 demo-errors:
 	$(PYTHON) -B -m tools.demo_errors
+
+demo-graphs:
+	$(PYTHON) -B -m tools.demo_graphs

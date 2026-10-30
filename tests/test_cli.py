@@ -32,45 +32,60 @@ class CliTests(unittest.TestCase):
     """Проверить stdout, stderr и коды завершения приложения."""
 
     def test_success(self) -> None:
-        """Вывести прямые зависимости, сохранив настройки реестра."""
-        dependencies = {"beta": "^2.0.0", "debug": "^4.0.0"}
+        """Построить транзитивный граф и применить фильтр из XML."""
+        repository = {
+            "express": {"beta": "^2.0.0", "debug": "^4.0.0"},
+            "beta": {"gamma": "^1"}, "gamma": {},
+        }
         with patch(
-            "src.main.fetch_direct_dependencies", return_value=dependencies
+            "src.repository.fetch_direct_dependencies",
+            side_effect=lambda registry, package: repository[package],
         ) as fetch:
             code, stdout, stderr = run_main("--config", "examples/config.xml")
         self.assertEqual(code, SUCCESS)
         self.assertEqual(stderr, "")
         self.assertEqual(
             stdout,
-            "Прямые зависимости пакета express:\n"
-            "beta: ^2.0.0\ndebug: ^4.0.0\n",
+            "Граф зависимостей пакета express (BFS):\n"
+            "express -> beta\nbeta -> gamma\ngamma -> (нет зависимостей)\n",
         )
-        fetch.assert_called_once_with("https://registry.npmjs.org", "express")
+        self.assertEqual(
+            [item.args for item in fetch.call_args_list],
+            [("https://registry.npmjs.org", package)
+             for package in ("express", "beta", "gamma")],
+        )
 
     def test_test_example(self) -> None:
-        """Сообщить, что тестовый граф относится к этапу 3."""
-        with patch("src.main.fetch_direct_dependencies") as fetch:
+        """Прочитать локальный граф и не обращаться к npm."""
+        with patch("src.repository.fetch_direct_dependencies") as fetch:
             code, stdout, stderr = run_main(
                 "--config", "examples/test_config.xml"
             )
-        self.assertEqual(code, DEPENDENCY_ERROR)
-        self.assertEqual(stdout, "")
-        self.assertIn("test_mode", stderr)
-        self.assertIn("этапу 3", stderr)
+        self.assertEqual(code, SUCCESS)
+        self.assertEqual(stderr, "")
+        self.assertEqual(
+            stdout, "Граф зависимостей пакета A (BFS):\n"
+            "A -> B, C\nB -> (нет зависимостей)\nC -> (нет зависимостей)\n",
+        )
         fetch.assert_not_called()
 
     def test_no_dependencies(self) -> None:
         """Сообщить о пакете без зависимостей без ошибки."""
-        with patch("src.main.fetch_direct_dependencies", return_value={}):
+        with patch(
+            "src.repository.fetch_direct_dependencies", return_value={}
+        ):
             code, stdout, stderr = run_main("--config", "examples/config.xml")
         self.assertEqual(code, SUCCESS)
         self.assertEqual(stderr, "")
-        self.assertEqual(stdout, "У пакета express нет прямых зависимостей.\n")
+        self.assertEqual(
+            stdout, "Граф зависимостей пакета express (BFS):\n"
+            "express -> (нет зависимостей)\n",
+        )
 
     def test_dependency_error(self) -> None:
         """Направить ошибку получения данных в stderr без traceback."""
         with patch(
-            "src.main.fetch_direct_dependencies",
+            "src.repository.fetch_direct_dependencies",
             side_effect=DependencyError("Реестр недоступен."),
         ):
             code, stdout, stderr = run_main("--config", "examples/config.xml")
@@ -78,6 +93,66 @@ class CliTests(unittest.TestCase):
         self.assertEqual(stdout, "")
         self.assertIn("Реестр недоступен", stderr)
         self.assertNotIn("Traceback", stderr)
+
+    def test_transitive_error_without_partial_output(self) -> None:
+        """Не печатать частичный граф при ошибке транзитивного узла."""
+        with patch(
+            "src.repository.fetch_direct_dependencies",
+            side_effect=[{"beta": "*"}, DependencyError("beta unavailable")],
+        ):
+            code, stdout, stderr = run_main("--config", "examples/config.xml")
+        self.assertEqual(code, DEPENDENCY_ERROR)
+        self.assertEqual(stdout, "")
+        self.assertIn("beta unavailable", stderr)
+
+    def test_filtered_root_without_network(self) -> None:
+        """Не запрашивать метаданные исключённого исходного пакета."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_config(Path(directory), filter_substring="press")
+            with patch("src.repository.fetch_direct_dependencies") as fetch:
+                code, stdout, stderr = run_main("--config", str(path))
+        self.assertEqual(code, SUCCESS)
+        self.assertEqual(stderr, "")
+        self.assertEqual(stdout, "Пакет express исключён фильтром.\n")
+        fetch.assert_not_called()
+
+    def test_invalid_local_graph(self) -> None:
+        """Обработать ошибки тестового графа без traceback."""
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory) / "repository.json"
+            path = write_config(
+                Path(directory), package="A", test_mode="true",
+                repository=repository.name, filter_substring="",
+            )
+            for document in ("{", "{}", '{"A": ["B"]}'):
+                with self.subTest(document=document):
+                    repository.write_text(document, encoding="utf-8")
+                    result = run_cli("--config", str(path))
+                    self.assertEqual(result.returncode, DEPENDENCY_ERROR)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("Ошибка анализа", result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+
+    def test_local_graph_examples(self) -> None:
+        """Проверить демонстрационные графы через CLI."""
+        expected_bodies = {
+            "test_diamond.xml": "A -> B, C\nB -> D\nC -> D\n"
+            "D -> (нет зависимостей)\n",
+            "test_cycle.xml": "A -> B, D\nB -> C\nD -> D\nC -> A\n",
+            "test_filter.xml": "A -> C\nC -> D\nD -> (нет зависимостей)\n",
+            "test_empty.xml": "A -> (нет зависимостей)\n",
+        }
+        for filename, body in expected_bodies.items():
+            with self.subTest(filename=filename):
+                result = run_cli("--config", f"examples/{filename}")
+                self.assertEqual(result.returncode, SUCCESS, result.stderr)
+                self.assertEqual(result.stderr, "")
+                self.assertEqual(
+                    result.stdout, "Граф зависимостей пакета A (BFS):\n" + body
+                )
+        result = run_cli("--config", "examples/test_filtered_root.xml")
+        self.assertEqual(result.returncode, SUCCESS)
+        self.assertEqual(result.stdout, "Пакет A исключён фильтром.\n")
 
     def test_help(self) -> None:
         """Справка должна быть доступна без XML-файла."""
@@ -133,7 +208,8 @@ class CliTests(unittest.TestCase):
                 [
                     "sh",
                     str(PROJECT_DIR / "run.sh"),
-                    "--help",
+                    "--config",
+                    str(PROJECT_DIR / "examples/test_config.xml"),
                 ],
                 cwd=directory,
                 capture_output=True,
@@ -141,4 +217,4 @@ class CliTests(unittest.TestCase):
                 check=False,
             )
         self.assertEqual(result.returncode, SUCCESS, result.stderr)
-        self.assertIn("--config", result.stdout)
+        self.assertIn("A -> B, C", result.stdout)

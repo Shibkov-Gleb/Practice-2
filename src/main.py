@@ -1,12 +1,7 @@
-"""Точка входа CLI: чтение XML и вывод прямых зависимостей npm."""
+"""Точка входа CLI: чтение XML и построение графа зависимостей BFS."""
 
 __all__ = (
-    "SUCCESS",
-    "CONFIG_ERROR",
-    "DEPENDENCY_ERROR",
-    "create_parser",
-    "format_dependencies",
-    "main",
+    "SUCCESS", "CONFIG_ERROR", "DEPENDENCY_ERROR", "create_parser", "main",
 )
 
 import argparse
@@ -15,7 +10,9 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from src.config import load_config
-from src.npm import DependencyError, fetch_direct_dependencies
+from src.graph import build_dependency_graph, format_graph
+from src.npm import DependencyError
+from src.repository import create_dependency_loader
 from src.validation import ConfigError
 
 
@@ -27,7 +24,7 @@ DEPENDENCY_ERROR = 1
 def create_parser() -> argparse.ArgumentParser:
     """Создать CLI с опцией выбора XML-конфигурации."""
     parser = argparse.ArgumentParser(
-        description="Практическая работа 2, вариант 30, этап 2."
+        description="Практическая работа 2, вариант 30, этап 3."
     )
     parser.add_argument(
         "--config",
@@ -39,20 +36,8 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def format_dependencies(package: str, dependencies: dict[str, str]) -> str:
-    """Сформировать список прямых зависимостей с диапазонами версий."""
-    if not dependencies:
-        return f"У пакета {package} нет прямых зависимостей."
-    lines = [f"Прямые зависимости пакета {package}:"]
-    lines.extend(
-        f"{name}: {specification}"
-        for name, specification in sorted(dependencies.items())
-    )
-    return "\n".join(lines)
-
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Получить зависимости и вернуть код результата."""
+    """Построить граф по настройкам и вернуть код результата."""
     parser = create_parser()
     args = parser.parse_args(argv)
     try:
@@ -61,18 +46,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"Ошибка конфигурации: {error}", file=sys.stderr)
         return CONFIG_ERROR
     try:
-        if config.test_mode:
-            raise DependencyError(
-                "test_mode: чтение тестового графа относится к этапу 3; "
-                "для этапа 2 укажите false и URL реестра npm."
-            )
-        dependencies = fetch_direct_dependencies(
-            config.repository, config.package
+        loader = create_dependency_loader(config, args.config)
+        graph = build_dependency_graph(
+            config.package, loader, config.filter_substring
         )
     except DependencyError as error:
-        print(f"Ошибка получения зависимостей: {error}", file=sys.stderr)
+        print(f"Ошибка анализа зависимостей: {error}", file=sys.stderr)
         return DEPENDENCY_ERROR
-    print(format_dependencies(config.package, dependencies))
+    print(format_graph(config.package, graph))
     return SUCCESS
 
 

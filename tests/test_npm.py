@@ -1,6 +1,8 @@
 """Проверки HTTP-клиента npm без обращения к внешнему реестру."""
 
 import json
+import socket
+import ssl
 import unittest
 from http import HTTPStatus
 from http.client import IncompleteRead
@@ -8,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from unittest.mock import MagicMock, patch
 
 from src.npm import (
+    REQUEST_ATTEMPTS,
     REQUEST_TIMEOUT,
     DependencyError,
     build_metadata_url,
@@ -39,6 +42,9 @@ class NpmTests(unittest.TestCase):
     def setUp(self) -> None:
         """Создать независимый набор метаданных для каждого теста."""
         self.metadata = {"name": PACKAGE, "version": "1.0.0"}
+        sleeper = patch("src.npm.sleep")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
 
     def test_metadata_url(self) -> None:
         """Сохранить путь реестра и экранировать scoped-имя."""
@@ -167,6 +173,56 @@ class NpmTests(unittest.TestCase):
             with self.assertRaises(DependencyError):
                 fetch_direct_dependencies(REPOSITORY, PACKAGE)
         response.__exit__.assert_called_once()
+
+    def test_retry_tls_eof_then_success(self) -> None:
+        """Восстановиться после прямого или обёрнутого TLS EOF."""
+        payload = json.dumps(self.metadata).encode("utf-8")
+        error = ssl.SSLEOFError(8, "EOF occurred in violation of protocol")
+        failures = (error, URLError(error), URLError(socket.timeout("TLS")))
+        for failure in failures:
+            with self.subTest(failure=failure):
+                with patch("src.npm.urlopen", side_effect=[
+                    failure, make_response(payload),
+                ]) as open_url:
+                    self.assertEqual(
+                        fetch_direct_dependencies(REPOSITORY, PACKAGE), {}
+                    )
+                self.assertEqual(open_url.call_count, 2)
+                self.sleep.assert_called_with(0.5)
+
+    def test_retry_limit_and_package_diagnostic(self) -> None:
+        """Ограничить число повторов и назвать сбойный пакет."""
+        error = URLError(ssl.SSLEOFError(8, "TLS EOF"))
+        with patch("src.npm.urlopen", side_effect=error) as open_url:
+            with self.assertRaisesRegex(
+                DependencyError, f"{PACKAGE} .*{REQUEST_ATTEMPTS}"
+            ):
+                fetch_direct_dependencies(REPOSITORY, PACKAGE)
+        self.assertEqual(open_url.call_count, REQUEST_ATTEMPTS)
+        self.assertEqual(self.sleep.call_count, REQUEST_ATTEMPTS - 1)
+
+    def test_retry_interrupted_response(self) -> None:
+        """Закрыть неполный ответ и повторить загрузку целиком."""
+        broken = make_response(b"")
+        broken.__enter__.return_value.read.side_effect = IncompleteRead(b"{")
+        payload = json.dumps(self.metadata).encode("utf-8")
+        with patch("src.npm.urlopen", side_effect=[
+            broken, make_response(payload),
+        ]):
+            self.assertEqual(
+                fetch_direct_dependencies(REPOSITORY, PACKAGE), {}
+            )
+        broken.__exit__.assert_called_once()
+        self.sleep.assert_called_once()
+
+    def test_certificate_error_without_retry(self) -> None:
+        """Не повторять и не обходить ошибку проверки сертификата."""
+        error = URLError(ssl.SSLCertVerificationError(1, "certificate"))
+        with patch("src.npm.urlopen", side_effect=error) as open_url:
+            with self.assertRaisesRegex(DependencyError, "certificate"):
+                fetch_direct_dependencies(REPOSITORY, PACKAGE)
+        open_url.assert_called_once()
+        self.sleep.assert_not_called()
 
     def test_invalid_json(self) -> None:
         """Отклонить повреждённый JSON, HTML и неверную кодировку."""

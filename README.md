@@ -78,6 +78,8 @@ python3 -B -m src.main --config examples/test_config.xml
 
 Запрос метаданных: `repository/<encoded-package>/latest`. Для scoped-пакетов
 слеш экранируется; базовый путь и query URL сохраняются. HTTP timeout — 10 секунд.
+При TLS EOF, тайм-ауте, разрыве соединения или неполном ответе — до трёх попыток
+с паузами 0,5 и 1 секунда. Ошибки сертификатов, HTTP и JSON не повторяются.
 Обрабатываются HTTP-ошибки, сетевые сбои, обрыв ответа, неправильный JSON,
 несоответствие имени и некорректные поля зависимостей.
 
@@ -513,6 +515,10 @@ CLI пятого этапа: XML, граф BFS, D2/SVG и ASCII-дерево.
 
 - `_read_metadata` — Выполнить HTTP-запрос и преобразовать JSON-ответ в объект.
 
+- `_download_metadata` — Повторить загрузку после временного обрыва соединения.
+
+- `_is_retryable` — Отличить временный сетевой сбой от постоянной ошибки.
+
 - `_validate_metadata` — Проверить имя и версию в метаданных, полученных от реестра.
 
 - `_extract_section` — Прочитать и проверить словарь зависимостей одного типа.
@@ -836,6 +842,14 @@ CLI пятого этапа: XML, граф BFS, D2/SVG и ASCII-дерево.
   Обработать DNS, тайм-аут и разрыв соединения.
 - `NpmTests.test_read_error` —
   Обработать сбой чтения тела ответа и закрыть соединение.
+
+- `NpmTests.test_retry_tls_eof_then_success` — Восстановиться после TLS EOF.
+
+- `NpmTests.test_retry_limit_and_package_diagnostic` — Ограничить число повторов и назвать пакет.
+
+- `NpmTests.test_retry_interrupted_response` — Повторить загрузку неполного ответа целиком.
+
+- `NpmTests.test_certificate_error_without_retry` — Сохранить отказ при ошибке сертификата.
 - `NpmTests.test_invalid_json` —
   Отклонить повреждённый JSON, HTML и неверную кодировку.
 - `NpmTests.test_invalid_metadata` —

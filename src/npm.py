@@ -2,6 +2,7 @@
 
 __all__ = (
     "REQUEST_TIMEOUT",
+    "REQUEST_ATTEMPTS",
     "DEPENDENCY_FIELDS",
     "DependencyError",
     "build_metadata_url",
@@ -9,8 +10,11 @@ __all__ = (
 )
 
 import json
+import socket
+import ssl
 from http import HTTPStatus
-from http.client import HTTPException
+from http.client import HTTPException, IncompleteRead
+from time import sleep
 from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit, urlunsplit
@@ -20,6 +24,8 @@ from src.validation import PACKAGE_PATTERN
 
 
 REQUEST_TIMEOUT = 10
+REQUEST_ATTEMPTS = 3
+RETRY_DELAY = 0.5
 DEPENDENCY_FIELDS = ("dependencies", "optionalDependencies")
 
 
@@ -60,22 +66,43 @@ def _read_metadata(url: str, package: str) -> dict:
             "User-Agent": "practice-2-dependencies/0.2",
         },
     )
-    try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-            payload = response.read()
-    except HTTPError as error:
-        if error.code == HTTPStatus.NOT_FOUND:
-            message = f"Пакет {package} или его версия latest не найдены."
-        else:
-            message = f"Реестр вернул HTTP {error.code}: {error.reason}."
-        raise DependencyError(message) from error
-    except (URLError, OSError, HTTPException) as error:
-        message = f"Не удалось получить данные из реестра: {error}"
-        raise DependencyError(message) from error
+    payload = _download_metadata(request, package)
     try:
         return json.loads(payload.decode("utf-8"))
     except (UnicodeError, ValueError) as error:
         raise DependencyError("Реестр вернул некорректный JSON.") from error
+
+
+def _download_metadata(request: Request, package: str) -> bytes:
+    """Повторить запрос после временного обрыва HTTPS или чтения."""
+    for attempt in range(1, REQUEST_ATTEMPTS + 1):
+        try:
+            with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+                return response.read()
+        except HTTPError as error:
+            if error.code == HTTPStatus.NOT_FOUND:
+                message = f"Пакет {package} или его версия latest не найдены."
+            else:
+                message = f"Реестр вернул HTTP {error.code}: {error.reason}."
+            raise DependencyError(message) from error
+        except (URLError, OSError, HTTPException) as error:
+            if attempt < REQUEST_ATTEMPTS and _is_retryable(error):
+                sleep(RETRY_DELAY * attempt)
+                continue
+            message = (
+                f"Не удалось получить данные из реестра для {package} "
+                f"(попыток: {attempt}): {error}"
+            )
+            raise DependencyError(message) from error
+
+
+def _is_retryable(error: Exception) -> bool:
+    """Отличить временный обрыв от ошибки сертификата или данных."""
+    reason = error.reason if isinstance(error, URLError) else error
+    return isinstance(reason, (
+        ssl.SSLEOFError, ssl.SSLZeroReturnError, TimeoutError, socket.timeout,
+        ConnectionError, IncompleteRead,
+    ))
 
 
 def _validate_metadata(metadata: dict, package: str) -> None:

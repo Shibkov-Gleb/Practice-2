@@ -22,3 +22,11 @@ demo-errors:
 
 demo-graphs:
 	$(PYTHON) -B -m tools.demo_graphs
+
+.PHONY: reverse demo-reverse
+
+reverse:
+	$(PYTHON) -B -m src.reverse --config examples/reverse_diamond.xml
+
+demo-reverse:
+	$(PYTHON) -B -m tools.demo_reverse

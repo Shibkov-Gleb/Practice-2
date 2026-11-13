@@ -8,9 +8,10 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Mapping, Optional
 from xml.etree import ElementTree
 
-from src.graph import DependencyGraph
+from src.graph import DependencyGraph, format_package
 
 
 RENDER_TIMEOUT = 60
@@ -22,7 +23,10 @@ class VisualizationError(ValueError):
     """Ошибка формирования или сохранения изображения."""
 
 
-def format_d2(package: str, graph: DependencyGraph) -> str:
+def format_d2(
+    package: str, graph: DependencyGraph,
+    versions: Optional[Mapping[str, str]] = None,
+) -> str:
     """Описать все вершины и рёбра, включая циклы, на языке D2."""
     lines = ["direction: right"]
     identifiers = {name: f"n{index}" for index, name in enumerate(graph)}
@@ -30,7 +34,8 @@ def format_d2(package: str, graph: DependencyGraph) -> str:
         label = json.dumps(f"{package}: excluded by filter", ensure_ascii=True)
         return "\n".join([*lines, f"empty: {label}", ""])
     for name, identifier in identifiers.items():
-        lines.append(f"{identifier}: {json.dumps(name, ensure_ascii=True)}")
+        label = json.dumps(format_package(name, versions), ensure_ascii=True)
+        lines.append(f"{identifier}: {label}")
     for name, dependencies in graph.items():
         for dependency in dependencies:
             lines.append(f"{identifiers[name]} -> {identifiers[dependency]}")
@@ -69,7 +74,8 @@ def _render(source: Path, image: Path) -> None:
 
 
 def save_visualization(
-    package: str, graph: DependencyGraph, output: Path
+    package: str, graph: DependencyGraph, output: Path,
+    versions: Optional[Mapping[str, str]] = None,
 ) -> tuple[Path, Path]:
     """Сохранить D2 и SVG после успешного временного рендеринга."""
     output = output.resolve()
@@ -83,7 +89,7 @@ def save_visualization(
             staged_source = Path(directory) / "graph.d2"
             staged_image = Path(directory) / "graph.svg"
             staged_source.write_text(
-                format_d2(package, graph), encoding="utf-8"
+                format_d2(package, graph, versions), encoding="utf-8"
             )
             _render(staged_source, staged_image)
             staged_source.replace(source)

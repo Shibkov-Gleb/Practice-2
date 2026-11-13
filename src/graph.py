@@ -5,14 +5,23 @@ __all__ = (
     "DependencyLoader",
     "build_dependency_graph",
     "format_graph",
+    "format_package",
 )
 
 from collections import deque
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Mapping, Optional
 
 
 DependencyGraph = dict[str, tuple[str, ...]]
 DependencyLoader = Callable[[str], Iterable[str]]
+
+
+def format_package(
+    package: str, versions: Optional[Mapping[str, str]] = None,
+) -> str:
+    """Добавить известную версию к имени, сохранив тестовые подписи."""
+    version = (versions or {}).get(package)
+    return f"{package}@{version}" if version else package
 
 
 def build_dependency_graph(

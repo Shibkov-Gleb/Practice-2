@@ -12,6 +12,10 @@ MAX_FILE_LINES = 1000
 MAX_TEXT_LINE = 120
 STAGE_COUNT = 5
 REQUIRED = ("README.md", ".gitignore", "src", "tests", "run.sh", "Makefile")
+README_ASSETS = {
+    Path("docs/graphs") / f"{name}.{extension}"
+    for name in ("test_graph", "express") for extension in ("d2", "svg")
+}
 FORBIDDEN_SUFFIXES = {
     ".zip", ".tar", ".gz", ".7z", ".rar", ".pyc", ".pyo", ".so", ".dylib",
     ".exe", ".pdf", ".png", ".jpg", ".svg", ".d2",
@@ -53,6 +57,8 @@ def _check_files() -> list[str]:
     problems = []
     for filename in filter(None, filenames):
         path = Path(filename)
+        if path in README_ASSETS:
+            continue
         forbidden = path.suffix.lower() in FORBIDDEN_SUFFIXES
         forbidden = forbidden or bool(set(path.parts) & FORBIDDEN_PARTS)
         if forbidden or path.name == ".DS_Store":
@@ -95,7 +101,7 @@ def _check_stages() -> list[str]:
     """Проверить ветку и подробный scoped-коммит каждого этапа."""
     problems = []
     for stage in range(1, STAGE_COUNT + 1):
-        branch = f"codex/stage-{stage}"
+        branch = f"stage-{stage}"
         message = _git("log", "-1", "--format=%B", branch)
         title, _, body = message.partition("\n")
         if not re.fullmatch(rf"feat\(stage-{stage}\): .+", title):

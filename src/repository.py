@@ -10,6 +10,7 @@ import json
 import re
 from functools import partial
 from pathlib import Path
+from typing import Optional
 
 from src.config import Config
 from src.graph import DependencyLoader
@@ -21,14 +22,19 @@ TEST_NAME_PATTERN = re.compile(r"[A-Z]+")
 
 
 def create_dependency_loader(
-    config: Config, config_path: Path
+    config: Config, config_path: Path,
+    versions: Optional[dict[str, str]] = None,
 ) -> DependencyLoader:
     """Выбрать источник данных, сохранив пути относительно XML."""
     if config.test_mode:
         path = resolve_path(config.repository, config_path.resolve().parent)
         repository = load_test_repository(path)
         return partial(_test_dependencies, repository)
-    return partial(fetch_direct_dependencies, config.repository)
+    if versions is None:
+        return partial(fetch_direct_dependencies, config.repository)
+    return partial(
+        fetch_direct_dependencies, config.repository, versions=versions
+    )
 
 
 def load_test_repository(path: Path) -> dict[str, list[str]]:

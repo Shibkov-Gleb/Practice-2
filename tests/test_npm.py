@@ -77,6 +77,16 @@ class NpmTests(unittest.TestCase):
         """Отсутствие обоих полей означает отсутствие зависимостей."""
         self.assertEqual(fetch_metadata(self.metadata), {})
 
+    def test_collect_versions_after_validation(self) -> None:
+        """Не сохранять версию из некорректного ответа реестра."""
+        versions = {}
+        self.metadata["dependencies"] = {"beta": None}
+        payload = json.dumps(self.metadata).encode("utf-8")
+        with patch("src.npm.urlopen", return_value=make_response(payload)):
+            with self.assertRaises(DependencyError):
+                fetch_direct_dependencies(REPOSITORY, PACKAGE, versions)
+        self.assertEqual(versions, {})
+
     def test_optional_dependencies(self) -> None:
         """Учесть приоритет необязательных зависимостей."""
         self.metadata["dependencies"] = {"shared": "^1", "regular": "*"}
@@ -176,6 +186,7 @@ class NpmTests(unittest.TestCase):
             {"name": PACKAGE},
             {"name": PACKAGE, "version": ""},
             {"name": PACKAGE, "version": None},
+            {"name": PACKAGE, "version": "1.0.0\nlabel"},
         )
         for document in documents:
             with self.subTest(document=document):

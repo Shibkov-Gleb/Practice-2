@@ -3,6 +3,7 @@
 __all__ = ("present_graph",)
 
 from pathlib import Path
+from typing import Mapping, Optional
 
 from src.ascii_tree import format_ascii_tree
 from src.config import Config
@@ -12,15 +13,16 @@ from src.visualization import VisualizationError, save_visualization
 
 
 def present_graph(
-    config: Config, config_path: Path, graph: DependencyGraph
+    config: Config, config_path: Path, graph: DependencyGraph,
+    versions: Optional[Mapping[str, str]] = None,
 ) -> str:
     """Сохранить граф и при необходимости добавить ASCII-дерево."""
     output = resolve_path(config.output_file, config_path.resolve().parent)
     _protect_inputs(config, config_path, output)
-    source, image = save_visualization(config.package, graph, output)
+    source, image = save_visualization(config.package, graph, output, versions)
     lines = [f"D2: {source}", f"SVG: {image}"]
     if config.ascii_tree:
-        lines.append(format_ascii_tree(config.package, graph))
+        lines.append(format_ascii_tree(config.package, graph, versions))
     return "\n".join(lines)
 
 

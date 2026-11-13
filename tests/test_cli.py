@@ -42,7 +42,7 @@ class CliTests(unittest.TestCase):
         """Изолировать CLI от внешнего рендеринга в модульных тестах."""
         renderer = patch(
             "src.presentation.save_visualization",
-            side_effect=lambda package, graph, output: (
+            side_effect=lambda package, graph, output, versions: (
                 output.with_suffix(".d2"), output,
             ),
         )
@@ -57,7 +57,7 @@ class CliTests(unittest.TestCase):
         }
         with patch(
             "src.repository.fetch_direct_dependencies",
-            side_effect=lambda registry, package: repository[package],
+            side_effect=lambda registry, package, **kw: repository[package],
         ) as fetch:
             code, stdout, stderr = run_main("--config", "examples/config.xml")
         self.assertEqual(code, SUCCESS)
@@ -84,6 +84,27 @@ class CliTests(unittest.TestCase):
         self.assertIn("SVG: ", stdout)
         self.assertNotIn("|--", stdout)
         fetch.assert_not_called()
+
+    def test_versions_from_registry(self) -> None:
+        """Передать версии из HTTP-ответов в ASCII и рендеринг SVG."""
+        documents = (
+            {"name": "express", "version": "5.1.0",
+             "dependencies": {"beta": "^1", "debug": "^4"}},
+            {"name": "beta", "version": "1.2.0"},
+        )
+        with patch("src.npm._read_metadata", side_effect=documents) as read:
+            with patch("src.presentation.save_visualization") as render:
+                render.return_value = (Path("graph.d2"), Path("graph.svg"))
+                code, stdout, stderr = run_main(
+                    "--config", "examples/config.xml"
+                )
+        self.assertEqual(code, SUCCESS)
+        self.assertEqual(stderr, "")
+        self.assertTrue(stdout.endswith("express@5.1.0\n`-- beta@1.2.0\n"))
+        self.assertEqual(read.call_count, len(documents))
+        self.assertEqual(render.call_args.args[-1], {
+            "express": "5.1.0", "beta": "1.2.0",
+        })
 
     def test_no_dependencies(self) -> None:
         """Сообщить о пакете без зависимостей без ошибки."""

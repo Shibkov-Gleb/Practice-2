@@ -48,11 +48,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"Ошибка конфигурации: {error}", file=sys.stderr)
         return CONFIG_ERROR
     try:
-        loader = create_dependency_loader(config, args.config)
+        versions = {}
+        loader = create_dependency_loader(config, args.config, versions)
         graph = build_dependency_graph(
             config.package, loader, config.filter_substring
         )
-        output = present_graph(config, args.config, graph)
+        output = present_graph(config, args.config, graph, versions)
     except (DependencyError, VisualizationError) as error:
         print(f"Ошибка анализа зависимостей: {error}", file=sys.stderr)
         return DEPENDENCY_ERROR

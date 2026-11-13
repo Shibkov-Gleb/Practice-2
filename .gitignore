@@ -21,3 +21,7 @@ dist/
 *.gz
 *.d2
 /output/
+!docs/graphs/test_graph.d2
+!docs/graphs/test_graph.svg
+!docs/graphs/express.d2
+!docs/graphs/express.svg

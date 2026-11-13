@@ -11,6 +11,7 @@ __all__ = (
 import json
 from http import HTTPStatus
 from http.client import HTTPException
+from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -34,7 +35,10 @@ def build_metadata_url(repository: str, package: str) -> str:
     return urlunsplit(parts._replace(path=path, fragment=""))
 
 
-def fetch_direct_dependencies(repository: str, package: str) -> dict[str, str]:
+def fetch_direct_dependencies(
+    repository: str, package: str,
+    versions: Optional[dict[str, str]] = None,
+) -> dict[str, str]:
     """Получить прямые runtime-зависимости latest без обхода графа."""
     url = build_metadata_url(repository, package)
     metadata = _read_metadata(url, package)
@@ -42,6 +46,8 @@ def fetch_direct_dependencies(repository: str, package: str) -> dict[str, str]:
     dependencies = {}
     for field in DEPENDENCY_FIELDS:
         dependencies.update(_extract_section(metadata, field))
+    if versions is not None:
+        versions[package] = metadata["version"].strip()
     return dict(sorted(dependencies.items()))
 
 
@@ -79,7 +85,8 @@ def _validate_metadata(metadata: dict, package: str) -> None:
     if metadata.get("name") != package:
         raise DependencyError("Имя пакета в ответе не совпадает с запросом.")
     version = metadata.get("version")
-    if not isinstance(version, str) or not version.strip():
+    if (not isinstance(version, str) or not version.strip()
+            or not all(character.isprintable() for character in version)):
         raise DependencyError("В метаданных отсутствует версия пакета.")
 
 

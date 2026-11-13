@@ -85,7 +85,9 @@ python3 -B -m src.main --config examples/test_config.xml
 приоритет у `optionalDependencies`. `devDependencies` и `peerDependencies`
 не включаются. Это граф **по именам пакетов с метаданными latest** для каждого
 узла. Разрешение semver-диапазонов, npm-алиасов, Git/URL-зависимостей и lockfile
-не реализовано. Результат не является точной моделью конкретной установки npm.
+не реализовано. В ASCII, D2 и SVG выводится `имя@версия`: версия взята из ответа
+`latest` для этого узла, а не из диапазона родительской зависимости.
+Результат не является точной моделью конкретной установки npm.
 Различия с менеджером пакетов разобраны в [COMPARISON.md](COMPARISON.md).
 
 Очередь `deque`, `popleft()` и множество обнаруженных вершин обеспечивают BFS
@@ -128,7 +130,8 @@ make demo-visuals
 
 `demo-errors` демонстрирует ошибки всех шести настроек. `demo-graphs` выполняет
 шесть локальных сценариев. `demo-visuals` требует сеть и D2, создаёт каталог
-`output/` и три пары D2/SVG. Сгенерированные файлы игнорируются Git как артефакты.
+`output/` и три пары D2/SVG. Результаты запусков игнорируются Git;
+два сохранённых примера для README хранятся отдельно в `docs/graphs/`.
 
 ## Обратные зависимости: этап 4
 
@@ -186,6 +189,179 @@ A
 Ошибка XML/настроек возвращает код 2. Ошибка данных или визуализации — код 1,
 сообщение в stderr без traceback и частичного успешного stdout. Успех — код 0.
 
+## Проверка этапа 5: тестовый граф и реальный express
+
+Сохранённые результаты запуска от **13 ноября 2026 года**. На схемах стрелка
+направлена от пакета к его зависимости. SVG можно открыть отдельно и увеличить;
+рядом доступен исходный D2. Эти четыре файла включены в репозиторий как иллюстрации.
+
+### Тестовый репозиторий
+
+```sh
+./run.sh --config examples/test_config.xml
+```
+
+Три узла и два ребра: `A → B`, `A → C`. В тестовом JSON версий нет.
+
+![Тестовый граф A → B, C](docs/graphs/test_graph.svg)
+
+[Открыть SVG](docs/graphs/test_graph.svg) · [Исходный D2](docs/graphs/test_graph.d2)
+
+```text
+A
+|-- B
+`-- C
+```
+
+### Реальный репозиторий npm: express
+
+```sh
+./run.sh --config examples/config.xml
+```
+
+Конфигурация: реестр `https://registry.npmjs.org`, `test_mode=false`,
+`ascii_tree=true`, фильтр `debug`. Пакет и все зависимости запрошены через HTTP;
+на узлах указаны фактически полученные версии `latest`. В этом запуске:
+**62 узлов, 114 рёбер**, корень `express@5.3.0`.
+Фильтр исключает имена с `debug` и обход их зависимостей по этому пути.
+
+![Граф зависимостей express с версиями](docs/graphs/express.svg)
+
+[Открыть SVG express](docs/graphs/express.svg) · [Исходный D2 express](docs/graphs/express.d2)
+
+<details>
+<summary>Полное ASCII-дерево express с версиями</summary>
+
+```text
+express@5.3.0
+|-- accepts@1.3.8
+|   |-- mime-types@3.0.2
+|   |   `-- mime-db@1.54.0
+|   `-- negotiator@1.1.0
+|       `-- content-type@3.1.1
+|-- body-parser@2.4.0
+|   |-- bytes@3.1.2
+|   |-- content-type@3.1.1 [seen]
+|   |-- http-errors@2.0.1
+|   |   |-- depd@2.0.0
+|   |   |-- inherits@2.0.4
+|   |   |-- setprototypeof@1.2.0
+|   |   |-- statuses@2.0.2
+|   |   `-- toidentifier@1.0.1
+|   |-- iconv-lite@0.7.3
+|   |   `-- safer-buffer@2.1.2
+|   |-- on-finished@2.4.2
+|   |   `-- ee-first@1.1.1
+|   |-- qs@6.17.1
+|   |   |-- es-define-property@1.0.1
+|   |   `-- side-channel@1.1.1
+|   |       |-- es-errors@1.3.0
+|   |       |-- object-inspect@1.13.4
+|   |       |-- side-channel-list@1.0.1
+|   |       |   |-- es-errors@1.3.0 [seen]
+|   |       |   `-- object-inspect@1.13.4 [seen]
+|   |       |-- side-channel-map@1.0.1
+|   |       |   |-- call-bound@1.0.4
+|   |       |   |   |-- call-bind-apply-helpers@1.0.2
+|   |       |   |   |   |-- es-errors@1.3.0 [seen]
+|   |       |   |   |   `-- function-bind@1.1.2
+|   |       |   |   `-- get-intrinsic@1.3.0
+|   |       |   |       |-- call-bind-apply-helpers@1.0.2 [seen]
+|   |       |   |       |-- es-define-property@1.0.1 [seen]
+|   |       |   |       |-- es-errors@1.3.0 [seen]
+|   |       |   |       |-- es-object-atoms@1.1.2
+|   |       |   |       |   `-- es-errors@1.3.0 [seen]
+|   |       |   |       |-- function-bind@1.1.2 [seen]
+|   |       |   |       |-- get-proto@1.0.1
+|   |       |   |       |   |-- dunder-proto@1.0.1
+|   |       |   |       |   |   |-- call-bind-apply-helpers@1.0.2 [seen]
+|   |       |   |       |   |   |-- es-errors@1.3.0 [seen]
+|   |       |   |       |   |   `-- gopd@1.2.0
+|   |       |   |       |   `-- es-object-atoms@1.1.2 [seen]
+|   |       |   |       |-- gopd@1.2.0 [seen]
+|   |       |   |       |-- has-symbols@1.1.0
+|   |       |   |       |-- hasown@2.0.4
+|   |       |   |       |   `-- function-bind@1.1.2 [seen]
+|   |       |   |       `-- math-intrinsics@1.1.0
+|   |       |   |-- es-errors@1.3.0 [seen]
+|   |       |   |-- get-intrinsic@1.3.0 [seen]
+|   |       |   `-- object-inspect@1.13.4 [seen]
+|   |       `-- side-channel-weakmap@1.0.2
+|   |           |-- call-bound@1.0.4 [seen]
+|   |           |-- es-errors@1.3.0 [seen]
+|   |           |-- get-intrinsic@1.3.0 [seen]
+|   |           |-- object-inspect@1.13.4 [seen]
+|   |           `-- side-channel-map@1.0.1 [seen]
+|   |-- raw-body@4.0.0
+|   |   |-- bytes@3.1.2 [seen]
+|   |   `-- http-errors@2.0.1 [seen]
+|   `-- type-is@3.0.0
+|       `-- content-type@3.1.1 [seen]
+|-- content-disposition@3.0.0
+|-- content-type@3.1.1 [seen]
+|-- cookie@2.0.2
+|-- cookie-signature@1.2.2
+|-- depd@2.0.0 [seen]
+|-- encodeurl@3.0.1
+|-- escape-html@1.0.3
+|-- etag@1.8.1
+|-- finalhandler@2.1.1
+|   |-- encodeurl@3.0.1 [seen]
+|   |-- escape-html@1.0.3 [seen]
+|   |-- on-finished@2.4.2 [seen]
+|   |-- parseurl@1.3.3
+|   `-- statuses@2.0.2 [seen]
+|-- fresh@0.5.2
+|-- http-errors@2.0.1 [seen]
+|-- merge-descriptors@2.0.0
+|-- mime-types@3.0.2 [seen]
+|-- on-finished@2.4.2 [seen]
+|-- once@1.4.0
+|   `-- wrappy@1.0.2
+|-- parseurl@1.3.3 [seen]
+|-- proxy-addr@2.0.8
+|   |-- forwarded@0.2.0
+|   `-- ipaddr.js@2.5.0
+|-- qs@6.17.1 [seen]
+|-- range-parser@1.3.0
+|-- router@2.2.0
+|   |-- depd@2.0.0 [seen]
+|   |-- is-promise@4.0.0
+|   |-- parseurl@1.3.3 [seen]
+|   `-- path-to-regexp@9.0.0
+|-- send@1.2.1
+|   |-- encodeurl@3.0.1 [seen]
+|   |-- escape-html@1.0.3 [seen]
+|   |-- etag@1.8.1 [seen]
+|   |-- fresh@0.5.2 [seen]
+|   |-- http-errors@2.0.1 [seen]
+|   |-- mime-types@3.0.2 [seen]
+|   |-- ms@2.1.3
+|   |-- on-finished@2.4.2 [seen]
+|   |-- range-parser@1.3.0 [seen]
+|   `-- statuses@2.0.2 [seen]
+|-- serve-static@2.2.1
+|   |-- encodeurl@3.0.1 [seen]
+|   |-- escape-html@1.0.3 [seen]
+|   |-- parseurl@1.3.3 [seen]
+|   `-- send@1.2.1 [seen]
+|-- statuses@2.0.2 [seen]
+|-- type-is@3.0.0 [seen]
+`-- vary@1.1.2
+```
+
+</details>
+
+При повторном запуске программа обновляет `examples/graph.d2` и
+`examples/graph.svg`; версии `latest` и состав графа могут измениться.
+Чтобы обновить сохранённые иллюстрации README после проверки результата:
+
+```sh
+cp examples/test_graph.d2 examples/test_graph.svg docs/graphs/
+cp examples/graph.d2 docs/graphs/express.d2
+cp examples/graph.svg docs/graphs/express.svg
+```
+
 ## Сравнение со штатным npm
 
 npm и Node.js требуются **только для независимого сравнения**, не для приложения.
@@ -207,27 +383,27 @@ make compare-npm
 
 | Ветка | Рабочее состояние |
 | --- | --- |
-| `codex/stage-1` | XML-прототип, вывод ключ–значение, ошибки настроек. |
-| `codex/stage-2` | Получение и вывод прямых зависимостей npm. |
-| `codex/stage-3` | Транзитивный BFS, фильтр, циклы и тестовый JSON. |
-| `codex/stage-4` | Обратные зависимости и локальные демонстрации. |
-| `codex/stage-5` | D2/SVG, ASCII и сравнение трёх пакетов с npm. |
+| `stage-1` | XML-прототип, вывод ключ–значение, ошибки настроек. |
+| `stage-2` | Получение и вывод прямых зависимостей npm. |
+| `stage-3` | Транзитивный BFS, фильтр, циклы и тестовый JSON. |
+| `stage-4` | Обратные зависимости и локальные демонстрации. |
+| `stage-5` | D2/SVG, ASCII и сравнение трёх пакетов с npm. |
 
 Каждая следующая ветка продолжает предыдущую. Каждый этап сохранён отдельным
 подробным Conventional/Scoped Commit; исправления первых этапов уже находятся
 в соответствующих коммитах. `main` указывает на итог этапа 5.
 
 ```sh
-git switch codex/stage-1
+git switch stage-1
 make test check
-git switch codex/stage-5
+git switch stage-5
 make test check
 ```
 
 Сохранена резервная ветка прежней истории
-`backup/before-stage-fixup-2026-10-30`. Ветки и коммиты созданы локально.
-Публикация изменений и очная защита остаются организационными требованиями:
-пользователь разрешил локальные коммиты; удалённая история не менялась.
+`backup/before-stage-fixup-2026-10-30`. Ветки `stage-1`–`stage-5` опубликованы
+на GitHub. В `main` объединены прежняя удалённая история и итог пяти этапов.
+Очная защита остаётся организационным требованием.
 
 ## Сборка, тестирование и оформление
 
@@ -264,7 +440,8 @@ Docstring и комментарии ограничены 72 символами, 
 `src/` — приложение; `tests/` — проверки; `tools/` — проверки оформления,
 демонстрации и независимое сравнение; `examples/` — XML и JSON. Есть `run.sh`,
 `Makefile`, `.gitignore`, `.flake8`, `requirements-dev.txt`. Бинарные инструменты,
-архивы, SVG, D2, кэши, `.pyc` и настройки редакторов в Git не добавляются.
+архивы, кэши, `.pyc` и настройки редакторов в Git не добавляются.
+SVG/D2 игнорируются, кроме четырёх файлов иллюстраций README в `docs/graphs/`.
 
 Ниже перечислены все явно объявленные классы и функции текущей версии,
 включая внутренние функции, методы тестов и служебные команды. Типы параметров
@@ -314,6 +491,8 @@ Docstring и комментарии ограничены 72 символами, 
 
 - `format_graph` — Представить граф списками смежности в порядке обхода BFS.
 
+- `format_package` — Добавить известную версию к имени пакета для вывода.
+
 ### `src/main.py`
 
 CLI пятого этапа: XML, граф BFS, D2/SVG и ASCII-дерево.
@@ -330,7 +509,7 @@ CLI пятого этапа: XML, граф BFS, D2/SVG и ASCII-дерево.
 
 - `build_metadata_url` — Дополнить URL реестра именем пакета и тегом latest.
 
-- `fetch_direct_dependencies` — Получить прямые runtime-зависимости latest без обхода графа.
+- `fetch_direct_dependencies` — Получить прямые зависимости и при необходимости сохранить версию узла.
 
 - `_read_metadata` — Выполнить HTTP-запрос и преобразовать JSON-ответ в объект.
 
@@ -519,6 +698,9 @@ CLI пятого этапа: XML, граф BFS, D2/SVG и ASCII-дерево.
   Изолировать CLI от внешнего рендеринга в модульных тестах.
 - `CliTests.test_success` —
   Построить транзитивный граф и применить фильтр из XML.
+- `CliTests.test_versions_from_registry` —
+  Передать версии реестра в ASCII и SVG без повторных запросов.
+
 - `CliTests.test_test_example` —
   Прочитать локальный граф и не обращаться к npm.
 - `CliTests.test_no_dependencies` —
@@ -635,6 +817,9 @@ CLI пятого этапа: XML, граф BFS, D2/SVG и ASCII-дерево.
   Сохранить путь реестра и экранировать scoped-имя.
 - `NpmTests.test_request_and_sorted_dependencies` —
   Проверить параметры запроса и сортировку результата.
+- `NpmTests.test_collect_versions_after_validation` —
+  Не сохранять версию из некорректного ответа реестра.
+
 - `NpmTests.test_no_dependencies` —
   Отсутствие обоих полей означает отсутствие зависимостей.
 - `NpmTests.test_optional_dependencies` —
@@ -775,6 +960,9 @@ CLI пятого этапа: XML, граф BFS, D2/SVG и ASCII-дерево.
   Применить безопасные идентификаторы и quoted labels D2.
 - `VisualizationTests.test_d2_empty_and_isolated` —
   Сформировать содержательную диаграмму даже без рёбер.
+- `VisualizationTests.test_versioned_labels_and_references` —
+  Сохранить версии scoped-узлов и отметки циклов в ASCII и D2.
+
 - `VisualizationTests.test_save_both_files` —
   Сохранить текст и SVG только после успешной компиляции.
 - `VisualizationTests.test_failure_keeps_old_results` —

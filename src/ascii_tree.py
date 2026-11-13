@@ -2,14 +2,19 @@
 
 __all__ = ("format_ascii_tree",)
 
-from src.graph import DependencyGraph
+from typing import Mapping, Optional
+
+from src.graph import DependencyGraph, format_package
 
 
-def format_ascii_tree(package: str, graph: DependencyGraph) -> str:
+def format_ascii_tree(
+    package: str, graph: DependencyGraph,
+    versions: Optional[Mapping[str, str]] = None,
+) -> str:
     """Показать цикл и общий узел, не раскрывая их повторно."""
     if not graph:
         return f"Пакет {package} исключён фильтром."
-    lines = [package]
+    lines = [format_package(package, versions)]
     expanded = {package}
     stack = []
     _push_children(stack, graph, package, "", frozenset({package}))
@@ -17,7 +22,7 @@ def format_ascii_tree(package: str, graph: DependencyGraph) -> str:
         name, prefix, last, ancestors = stack.pop()
         marker = "`-- " if last else "|-- "
         suffix = _reference_suffix(name, ancestors, expanded)
-        lines.append(prefix + marker + name + suffix)
+        lines.append(prefix + marker + format_package(name, versions) + suffix)
         if suffix:
             continue
         expanded.add(name)

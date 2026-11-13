@@ -128,6 +128,22 @@ class VisualizationTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.directory.iterdir()),
                          ["graph.d2", "graph.svg"])
 
+    def test_versioned_labels_and_references(self) -> None:
+        """Сохранить версии scoped-узлов, рёбра и отметки повторов."""
+        graph = {"@scope/root": ("child",), "child": ("@scope/root",)}
+        versions = {"@scope/root": "2.0.0", "child": "1.1.0"}
+        path = write_config(
+            self.directory, package="@scope/root", ascii_tree="true"
+        )
+        result = present_graph(load_config(path), path, graph, versions)
+        self.assertIn("@scope/root@2.0.0", result)
+        self.assertIn("`-- child@1.1.0", result)
+        self.assertIn("`-- @scope/root@2.0.0 [cycle]", result)
+        source = self.output.with_suffix(".d2").read_text(encoding="utf-8")
+        self.assertIn('n0: "@scope/root@2.0.0"', source)
+        self.assertIn('n1: "child@1.1.0"', source)
+        self.assertIn("n0 -> n1\nn1 -> n0", source)
+
     def test_invalid_missing_or_non_svg_result(self) -> None:
         """Отклонить отсутствие SVG, битый XML и чужой корневой тег."""
         self.run.side_effect = None

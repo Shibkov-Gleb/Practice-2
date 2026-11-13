@@ -30,3 +30,19 @@ reverse:
 
 demo-reverse:
 	$(PYTHON) -B -m tools.demo_reverse
+
+.PHONY: demo-visuals compare-npm
+
+demo-visuals:
+	mkdir -p output
+	$(PYTHON) -B -m src.main --config examples/visual_is_number.xml
+	$(PYTHON) -B -m src.main --config examples/visual_is_odd.xml
+	$(PYTHON) -B -m src.main --config examples/visual_types_node.xml
+
+compare-npm:
+	$(PYTHON) -B -m tools.compare_npm
+
+.PHONY: audit
+
+audit:
+	$(PYTHON) -B -m tools.check_repository

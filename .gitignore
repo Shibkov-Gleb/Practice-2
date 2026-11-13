@@ -19,3 +19,5 @@ dist/
 *.zip
 *.tar
 *.gz
+*.d2
+/output/

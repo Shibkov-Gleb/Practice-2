@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<config>
+    <package>is-number</package>
+    <repository>https://registry.npmjs.org</repository>
+    <test_mode>false</test_mode>
+    <output_file>../output/is_number.svg</output_file>
+    <ascii_tree>true</ascii_tree>
+    <filter_substring />
+</config>

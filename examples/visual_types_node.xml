@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<config>
+    <package>@types/node</package>
+    <repository>https://registry.npmjs.org</repository>
+    <test_mode>false</test_mode>
+    <output_file>../output/types_node.svg</output_file>
+    <ascii_tree>true</ascii_tree>
+    <filter_substring />
+</config>

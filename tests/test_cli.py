@@ -1,5 +1,7 @@
 """Интеграционные проверки настоящего процесса CLI."""
 
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -8,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.npm import DependencyError
+from src.visualization import VisualizationError
 from tests.helpers import run_main, write_config
 
 
@@ -15,6 +18,10 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 SUCCESS = 0
 ERROR = 2
 DEPENDENCY_ERROR = 1
+D2_AVAILABLE = bool(
+    os.environ.get("D2_BIN") or shutil.which("d2")
+    or (Path.home() / ".local/bin/d2").is_file()
+)
 
 
 def run_cli(*arguments: str) -> subprocess.CompletedProcess:
@@ -31,6 +38,17 @@ def run_cli(*arguments: str) -> subprocess.CompletedProcess:
 class CliTests(unittest.TestCase):
     """Проверить stdout, stderr и коды завершения приложения."""
 
+    def setUp(self) -> None:
+        """Изолировать CLI от внешнего рендеринга в модульных тестах."""
+        renderer = patch(
+            "src.presentation.save_visualization",
+            side_effect=lambda package, graph, output: (
+                output.with_suffix(".d2"), output,
+            ),
+        )
+        renderer.start()
+        self.addCleanup(renderer.stop)
+
     def test_success(self) -> None:
         """Построить транзитивный граф и применить фильтр из XML."""
         repository = {
@@ -44,11 +62,10 @@ class CliTests(unittest.TestCase):
             code, stdout, stderr = run_main("--config", "examples/config.xml")
         self.assertEqual(code, SUCCESS)
         self.assertEqual(stderr, "")
-        self.assertEqual(
-            stdout,
-            "Граф зависимостей пакета express (BFS):\n"
-            "express -> beta\nbeta -> gamma\ngamma -> (нет зависимостей)\n",
-        )
+        self.assertTrue(stdout.endswith(
+            "express\n`-- beta\n    `-- gamma\n"
+        ))
+        self.assertIn("SVG: ", stdout)
         self.assertEqual(
             [item.args for item in fetch.call_args_list],
             [("https://registry.npmjs.org", package)
@@ -63,10 +80,9 @@ class CliTests(unittest.TestCase):
             )
         self.assertEqual(code, SUCCESS)
         self.assertEqual(stderr, "")
-        self.assertEqual(
-            stdout, "Граф зависимостей пакета A (BFS):\n"
-            "A -> B, C\nB -> (нет зависимостей)\nC -> (нет зависимостей)\n",
-        )
+        self.assertIn("D2: ", stdout)
+        self.assertIn("SVG: ", stdout)
+        self.assertNotIn("|--", stdout)
         fetch.assert_not_called()
 
     def test_no_dependencies(self) -> None:
@@ -77,10 +93,7 @@ class CliTests(unittest.TestCase):
             code, stdout, stderr = run_main("--config", "examples/config.xml")
         self.assertEqual(code, SUCCESS)
         self.assertEqual(stderr, "")
-        self.assertEqual(
-            stdout, "Граф зависимостей пакета express (BFS):\n"
-            "express -> (нет зависимостей)\n",
-        )
+        self.assertTrue(stdout.endswith("\nexpress\n"))
 
     def test_dependency_error(self) -> None:
         """Направить ошибку получения данных в stderr без traceback."""
@@ -92,6 +105,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, DEPENDENCY_ERROR)
         self.assertEqual(stdout, "")
         self.assertIn("Реестр недоступен", stderr)
+        self.assertNotIn("Traceback", stderr)
+
+    def test_visualization_error(self) -> None:
+        """Вернуть код 1 и пустой stdout при ошибке рендеринга."""
+        with patch(
+            "src.repository.fetch_direct_dependencies", return_value={}
+        ):
+            with patch(
+                "src.main.present_graph", side_effect=VisualizationError("D2")
+            ):
+                code, stdout, stderr = run_main(
+                    "--config", "examples/config.xml"
+                )
+        self.assertEqual(code, DEPENDENCY_ERROR)
+        self.assertEqual(stdout, "")
+        self.assertIn("D2", stderr)
         self.assertNotIn("Traceback", stderr)
 
     def test_transitive_error_without_partial_output(self) -> None:
@@ -113,7 +142,9 @@ class CliTests(unittest.TestCase):
                 code, stdout, stderr = run_main("--config", str(path))
         self.assertEqual(code, SUCCESS)
         self.assertEqual(stderr, "")
-        self.assertEqual(stdout, "Пакет express исключён фильтром.\n")
+        self.assertTrue(
+            stdout.endswith("Пакет express исключён фильтром.\n")
+        )
         fetch.assert_not_called()
 
     def test_invalid_local_graph(self) -> None:
@@ -133,26 +164,20 @@ class CliTests(unittest.TestCase):
                     self.assertIn("Ошибка анализа", result.stderr)
                     self.assertNotIn("Traceback", result.stderr)
 
+    @unittest.skipUnless(D2_AVAILABLE, "Нужен D2 для проверки процесса CLI")
     def test_local_graph_examples(self) -> None:
-        """Проверить демонстрационные графы через CLI."""
-        expected_bodies = {
-            "test_diamond.xml": "A -> B, C\nB -> D\nC -> D\n"
-            "D -> (нет зависимостей)\n",
-            "test_cycle.xml": "A -> B, D\nB -> C\nD -> D\nC -> A\n",
-            "test_filter.xml": "A -> C\nC -> D\nD -> (нет зависимостей)\n",
-            "test_empty.xml": "A -> (нет зависимостей)\n",
-        }
-        for filename, body in expected_bodies.items():
+        """Проверить SVG локальных примеров настоящим D2."""
+        filenames = (
+            "test_diamond.xml", "test_cycle.xml", "test_filter.xml",
+            "test_empty.xml", "test_filtered_root.xml",
+        )
+        for filename in filenames:
             with self.subTest(filename=filename):
                 result = run_cli("--config", f"examples/{filename}")
                 self.assertEqual(result.returncode, SUCCESS, result.stderr)
                 self.assertEqual(result.stderr, "")
-                self.assertEqual(
-                    result.stdout, "Граф зависимостей пакета A (BFS):\n" + body
-                )
-        result = run_cli("--config", "examples/test_filtered_root.xml")
-        self.assertEqual(result.returncode, SUCCESS)
-        self.assertEqual(result.stdout, "Пакет A исключён фильтром.\n")
+                self.assertIn("D2: ", result.stdout)
+                self.assertIn("SVG: ", result.stdout)
 
     def test_help(self) -> None:
         """Справка должна быть доступна без XML-файла."""
@@ -201,6 +226,7 @@ class CliTests(unittest.TestCase):
                     self.assertIn(name, result.stderr)
                     self.assertNotIn("Traceback", result.stderr)
 
+    @unittest.skipUnless(D2_AVAILABLE, "Нужен D2 для проверки run.sh")
     def test_launcher_from_another_directory(self) -> None:
         """Скрипт запуска работает вне корневого каталога проекта."""
         with tempfile.TemporaryDirectory() as directory:
@@ -217,4 +243,4 @@ class CliTests(unittest.TestCase):
                 check=False,
             )
         self.assertEqual(result.returncode, SUCCESS, result.stderr)
-        self.assertIn("A -> B, C", result.stdout)
+        self.assertIn("SVG: ", result.stdout)

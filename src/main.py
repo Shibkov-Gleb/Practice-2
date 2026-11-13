@@ -1,4 +1,4 @@
-"""Точка входа CLI: чтение XML и построение графа зависимостей BFS."""
+"""CLI пятого этапа: XML, граф BFS, D2/SVG и ASCII-дерево."""
 
 __all__ = (
     "SUCCESS", "CONFIG_ERROR", "DEPENDENCY_ERROR", "create_parser", "main",
@@ -10,10 +10,12 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from src.config import load_config
-from src.graph import build_dependency_graph, format_graph
+from src.graph import build_dependency_graph
 from src.npm import DependencyError
+from src.presentation import present_graph
 from src.repository import create_dependency_loader
 from src.validation import ConfigError
+from src.visualization import VisualizationError
 
 
 SUCCESS = 0
@@ -24,7 +26,7 @@ DEPENDENCY_ERROR = 1
 def create_parser() -> argparse.ArgumentParser:
     """Создать CLI с опцией выбора XML-конфигурации."""
     parser = argparse.ArgumentParser(
-        description="Практическая работа 2, вариант 30, этап 3."
+        description="Практическая работа 2, вариант 30, этап 5."
     )
     parser.add_argument(
         "--config",
@@ -50,10 +52,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         graph = build_dependency_graph(
             config.package, loader, config.filter_substring
         )
-    except DependencyError as error:
+        output = present_graph(config, args.config, graph)
+    except (DependencyError, VisualizationError) as error:
         print(f"Ошибка анализа зависимостей: {error}", file=sys.stderr)
         return DEPENDENCY_ERROR
-    print(format_graph(config.package, graph))
+    print(output)
     return SUCCESS
 
 
